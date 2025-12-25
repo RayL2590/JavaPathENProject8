@@ -4,6 +4,7 @@ import com.openclassrooms.tourguide.helper.InternalTestHelper;
 import com.openclassrooms.tourguide.tracker.Tracker;
 import com.openclassrooms.tourguide.user.User;
 import com.openclassrooms.tourguide.user.UserReward;
+import com.openclassrooms.tourguide.dto.NearByAttractionDto;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -23,7 +24,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import gpsUtil.GpsUtil;
-import gpsUtil.location.Attraction;
 import gpsUtil.location.Location;
 import gpsUtil.location.VisitedLocation;
 
@@ -95,16 +95,32 @@ public class TourGuideService {
 		return visitedLocation;
 	}
 
-	public List<Attraction> getNearByAttractions(VisitedLocation visitedLocation) {
-		List<Attraction> nearbyAttractions = new ArrayList<>();
-		for (Attraction attraction : gpsUtil.getAttractions()) {
-			if (rewardsService.isWithinAttractionProximity(attraction, visitedLocation.location)) {
-				nearbyAttractions.add(attraction);
-			}
-		}
+	public List<NearByAttractionDto> getNearByAttractions(VisitedLocation visitedLocation, User user) {
+        List<NearByAttractionDto> nearbyAttractions = new ArrayList<>();
+        
+        // On récupère toutes les attractions et on les trie par distance
+        gpsUtil.getAttractions().stream()
+            .sorted((a1, a2) -> {
+                double dist1 = rewardsService.getDistance(a1, visitedLocation.location);
+                double dist2 = rewardsService.getDistance(a2, visitedLocation.location);
+                return Double.compare(dist1, dist2);
+            })
+            .limit(5) // On garde les 5 plus proches
+            .forEach(attraction -> {
+                double distance = rewardsService.getDistance(attraction, visitedLocation.location);
+                int rewardPoints = rewardsService.getRewardPoints(attraction, user);
+                
+                nearbyAttractions.add(new NearByAttractionDto(
+                        attraction.attractionName,
+                        new Location(attraction.latitude, attraction.longitude),
+                        visitedLocation.location,
+                        distance,
+                        rewardPoints
+                ));
+            });
 
-		return nearbyAttractions;
-	}
+        return nearbyAttractions;
+    }
 
 	private void addShutDownHook() {
 		Runtime.getRuntime().addShutdownHook(new Thread() {
