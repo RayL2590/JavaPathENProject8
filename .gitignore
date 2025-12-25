@@ -1,0 +1,9 @@
+/*
+
+!libs/
+!src/
+!pom.xml
+!readme.md
+!.gitignore
+
+src/target/
