@@ -1,0 +1,44 @@
+name: Java CI with Maven
+
+# Déclencheur : À chaque push ou pull request sur les branches main ou master
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Récupération du code
+    - uses: actions/checkout@v3
+
+    # 2. Installation de Java 17
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
+
+    # 3. Compilation du projet
+    - name: Build with Maven
+      run: mvn clean compile
+
+    # 4. Lancement des tests unitaires
+    # On exclut TestPerformance pour gagner du temps 
+    - name: Run Tests (Unit Tests Only)
+      run: mvn test -Dtest=!TestPerformance
+
+    # 5. Création du package JAR (sans relancer les tests)
+    - name: Package JAR
+      run: mvn package -DskipTests
+
+    # 6. Sauvegarde du JAR généré pour le télécharger plus tard
+    - name: Upload JAR artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: tourguide-jar
+        path: target/*.jar
