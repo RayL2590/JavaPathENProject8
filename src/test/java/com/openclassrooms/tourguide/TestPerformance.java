@@ -65,6 +65,7 @@ public class TestPerformance {
         
         CompletableFuture.allOf(futures).join();
 
+		System.out.println("Nombre d'utilisateurs testés : " + allUsers.size());
 		stopWatch.stop();
 		tourGuideService.tracker.stopTracking();
 
@@ -101,6 +102,7 @@ public class TestPerformance {
             }
         }
 
+		System.out.println("Nombre d'utilisateurs testés : " + allUsers.size());
 		stopWatch.stop();
 		tourGuideService.tracker.stopTracking();
 

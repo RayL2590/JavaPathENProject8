@@ -6,5 +6,6 @@
 !readme.md
 !.gitignore
 !.github/
+!Livrables/
 
 src/target/
