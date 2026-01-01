@@ -111,12 +111,14 @@ public class TourGuideService {
                 int rewardPoints = rewardsService.getRewardPoints(attraction, user);
                 
                 nearbyAttractions.add(new NearByAttractionDto(
-                        attraction.attractionName,
-                        new Location(attraction.latitude, attraction.longitude),
-                        visitedLocation.location,
-                        distance,
-                        rewardPoints
-                ));
+				attraction.attractionName,
+				attraction.latitude,                
+				attraction.longitude,               
+				visitedLocation.location.latitude,  
+				visitedLocation.location.longitude, 
+				distance,
+				rewardPoints
+				));
             });
 
         return nearbyAttractions;
@@ -176,5 +178,13 @@ public class TourGuideService {
 		LocalDateTime localDateTime = LocalDateTime.now().minusDays(new Random().nextInt(30));
 		return Date.from(localDateTime.toInstant(ZoneOffset.UTC));
 	}
+
+	public GpsUtil getGpsUtil() {
+        return gpsUtil;
+    }
+
+    public RewardsService getRewardsService() {
+        return rewardsService;
+    }
 
 }
