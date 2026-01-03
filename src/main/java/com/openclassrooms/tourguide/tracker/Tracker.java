@@ -2,8 +2,6 @@ package com.openclassrooms.tourguide.tracker;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.time.StopWatch;
@@ -19,9 +17,6 @@ public class Tracker extends Thread {
     // Intervalle de temps entre deux cycles de mise à jour des positions (5 minutes).
     private static final long TRACKING_POLLING_INTERVAL = TimeUnit.MINUTES.toMillis(5);
     
-    // Utilisation d'un pool de threads dédié pour paralléliser les appels de tracking.
-    // Un pool large est nécessaire ici car trackUserLocation implique des I/O (appels GPS) qui peuvent être lents.
-    private final ExecutorService executorService = Executors.newFixedThreadPool(1000);
 
     private final TourGuideService tourGuideService;
     private boolean stop = false;
@@ -35,9 +30,15 @@ public class Tracker extends Thread {
      */
     public void stopTracking() {
         stop = true;
-        executorService.shutdownNow();
     }
 
+    /**
+     * Boucle principale du thread Tracker :
+     * - Récupère la liste de tous les utilisateurs.
+     * - Lance le suivi de leur position de façon asynchrone.
+     * - Attend que toutes les tâches de suivi soient terminées avant de recommencer un cycle.
+     * - Fait une pause entre chaque cycle pour limiter la charge.
+     */
     @Override
     public void run() {
         StopWatch stopWatch = new StopWatch();
@@ -51,10 +52,9 @@ public class Tracker extends Thread {
             logger.debug("Begin Tracker. Tracking " + users.size() + " users.");
             stopWatch.start();
 
-            // Lancement des tâches de tracking en parallèle pour tous les utilisateurs.
-            // L'utilisation de CompletableFuture permet de ne pas bloquer la boucle sur chaque utilisateur séquentiellement.
+            // Lance le suivi de la position de chaque utilisateur de façon asynchrone.
             CompletableFuture<?>[] futures = users.stream()
-                .map(u -> CompletableFuture.runAsync(() -> tourGuideService.trackUserLocation(u), executorService))
+                .map(u -> tourGuideService.trackUserLocation(u))
                 .toArray(CompletableFuture[]::new);
 
             // On attend que toutes les tâches de tracking soient terminées avant de passer au cycle suivant.

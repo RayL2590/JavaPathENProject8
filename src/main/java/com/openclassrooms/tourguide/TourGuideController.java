@@ -3,6 +3,7 @@ package com.openclassrooms.tourguide;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,19 +31,25 @@ public class TourGuideController {
         return "Greetings from TourGuide!";
     }
     
+    /**
+     * Retourne la dernière position connue ou déclenche le suivi asynchrone de la position de l'utilisateur.
+     * Réponse asynchrone via CompletableFuture.
+     */
     @RequestMapping("/getLocation") 
-    public VisitedLocation getLocation(@RequestParam String userName) {
-        // Délègue au service la récupération de la dernière position connue ou le déclenchement d'un nouveau tracking GPS.
+    public CompletableFuture<VisitedLocation> getLocation(@RequestParam String userName) {
         return tourGuideService.getUserLocation(getUser(userName));
     }
     
+    /**
+     * Retourne les 5 attractions les plus proches de l'utilisateur, avec distance et points potentiels.
+     * Réponse asynchrone via CompletableFuture.
+     */
     @RequestMapping("/getNearbyAttractions") 
-    public List<NearByAttractionDto> getNearbyAttractions(@RequestParam String userName) {
-        // Récupération de la position actuelle pour calculer les distances.
-        VisitedLocation visitedLocation = tourGuideService.getUserLocation(tourGuideService.getUser(userName));
-        // Retourne une liste de DTOs contenant les 5 attractions les plus proches,
-        // leurs distances et les points de récompense potentiels, formatés spécifiquement pour l'affichage client.
-        return tourGuideService.getNearByAttractions(visitedLocation, tourGuideService.getUser(userName));
+    public CompletableFuture<List<NearByAttractionDto>> getNearbyAttractions(@RequestParam String userName) {
+        // Récupère la position asynchrone, puis calcule les attractions proches
+        User user = getUser(userName);
+        return tourGuideService.getUserLocation(user)
+            .thenApply(visitedLocation -> tourGuideService.getNearByAttractions(visitedLocation, user));
     }
     
     @RequestMapping("/getRewards") 
@@ -61,7 +68,10 @@ public class TourGuideController {
     }
 
 
-    // 1. Endpoint pour récupérer la liste de quelques utilisateurs (pour le menu déroulant)
+    /**
+     * Endpoint pour récupérer la liste de quelques utilisateurs (pour le menu déroulant du frontend).
+     * Limité à 10 utilisateurs pour éviter de surcharger l'interface.
+     */
     @RequestMapping("/getAllUsersBasic")
     public List<String> getAllUsersBasic() {
         // Limitation volontaire à 10 utilisateurs pour éviter de surcharger le frontend lors du chargement de la liste,
@@ -72,8 +82,9 @@ public class TourGuideController {
                 .collect(Collectors.toList());
     }
 
-    // 2. Endpoint "triche" pour la démo : force un utilisateur à visiter la premiere attraction
-    // Cela garantit qu'il aura des récompenses à afficher
+    /**
+     * Endpoint de test/démo : force un utilisateur à visiter la première attraction pour générer des récompenses.
+     */
     @RequestMapping("/triggerVisit")
     public void triggerVisit(@RequestParam String userName) {
         User user = getUser(userName);
@@ -85,11 +96,5 @@ public class TourGuideController {
         // le flux complet sans attendre le déplacement GPS réel ou le cycle du Tracker.
         tourGuideService.getRewardsService().calculateRewards(user);
     }
-
-    @RequestMapping("/getAllAttractions")
-    public List<Attraction> getAllAttractions() {
-        return tourGuideService.getGpsUtil().getAttractions();
-    }
    
-
 }

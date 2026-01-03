@@ -16,6 +16,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -38,6 +41,8 @@ public class TourGuideService {
     private final TripPricer tripPricer = new TripPricer();
     public final Tracker tracker;
     boolean testMode = true;
+
+    private final ExecutorService executorService = Executors.newFixedThreadPool(1000);
 
     public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
         this.gpsUtil = gpsUtil;
@@ -63,12 +68,21 @@ public class TourGuideService {
         return user.getUserRewards();
     }
 
-    public VisitedLocation getUserLocation(User user) {
-        // Si l'utilisateur a un historique, on retourne la dernière position connue pour éviter un appel GPS coûteux.
-        // Sinon, on force la localisation actuelle.
-        VisitedLocation visitedLocation = (user.getVisitedLocations().size() > 0) ? user.getLastVisitedLocation()
-                : trackUserLocation(user);
-        return visitedLocation;
+    /**
+     * Récupère la dernière position connue de l'utilisateur si elle existe,
+     * sinon déclenche un suivi asynchrone de la position via GPS.
+     * Utilise CompletableFuture pour permettre un traitement non bloquant,
+     * ce qui améliore la scalabilité du service.
+     *
+     * @param user L'utilisateur dont on veut la position.
+     * @return Un CompletableFuture contenant la dernière position visitée.
+     */
+    public CompletableFuture<VisitedLocation> getUserLocation(User user) {
+        if (user.getVisitedLocations().size() > 0) {
+            return CompletableFuture.completedFuture(user.getLastVisitedLocation());
+        } else {
+            return trackUserLocation(user);
+        }
     }
 
     public User getUser(String userName) {
@@ -97,14 +111,20 @@ public class TourGuideService {
         return providers;
     }
 
-    public VisitedLocation trackUserLocation(User user) {
-        // Appel à GpsUtil. 
-        VisitedLocation visitedLocation = gpsUtil.getUserLocation(user.getUserId());
-        user.addToVisitedLocations(visitedLocation);
-        
-        // Une fois la localisation mise à jour, on lance le calcul des récompenses de manière asynchrone (géré dans RewardsService).
-        rewardsService.calculateRewards(user);
-        return visitedLocation;
+    public CompletableFuture<VisitedLocation> trackUserLocation(User user) {
+        // On enveloppe l'appel bloquant dans supplyAsync
+        return CompletableFuture.supplyAsync(() -> {
+            return gpsUtil.getUserLocation(user.getUserId());
+        }, executorService) // On utilise un petit pool partagé
+        .thenApply(visitedLocation -> {
+            user.addToVisitedLocations(visitedLocation);
+            return visitedLocation;
+        })
+        .thenApply(visitedLocation -> {
+            // On enchaîne le calcul des récompenses sans bloquer
+            rewardsService.calculateRewards(user);
+            return visitedLocation;
+        });
     }
 
     public List<NearByAttractionDto> getNearByAttractions(VisitedLocation visitedLocation, User user) {
