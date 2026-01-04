@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
 
 import gpsUtil.GpsUtil;
@@ -35,21 +36,15 @@ public class TestRewardsService {
         user.addToVisitedLocations(new VisitedLocation(user.getUserId(), attraction, new Date()));
         
         tourGuideService.trackUserLocation(user);
-        
-        // Attente active que la récompense arrive
-        long start = System.currentTimeMillis();
-        while (user.getUserRewards().isEmpty() && (System.currentTimeMillis() - start) < 10000) {
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
+
+        Awaitility.await()
+                .atMost(10, TimeUnit.SECONDS)
+                .until(() -> !user.getUserRewards().isEmpty());
 
         List<UserReward> userRewards = user.getUserRewards();
         tourGuideService.tracker.stopTracking();
-        
-        assertTrue(userRewards.size() == 1);
+
+        assertEquals(1, userRewards.size());
     }
 
 	@Test
@@ -75,7 +70,11 @@ public class TestRewardsService {
         int i = 0;
 
         while(userRewards.size() < gpsUtil.getAttractions().size() && i < 200) {
-            try { TimeUnit.MILLISECONDS.sleep(100); } catch (InterruptedException e) {}
+            try {
+                TimeUnit.MILLISECONDS.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
             userRewards = tourGuideService.getUserRewards(tourGuideService.getAllUsers().get(0));
             i++;
         }

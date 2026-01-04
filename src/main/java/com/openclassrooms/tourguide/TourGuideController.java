@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,9 +22,13 @@ import tripPricer.Provider;
 @RestController
 public class TourGuideController {
 
-    @Autowired
+    final
     TourGuideService tourGuideService;
-    
+
+    public TourGuideController(TourGuideService tourGuideService) {
+        this.tourGuideService = tourGuideService;
+    }
+
     @RequestMapping("/")
     public String index() {
         return "Greetings from TourGuide!";
@@ -41,7 +44,7 @@ public class TourGuideController {
     }
     
     /**
-     * Retourne les 5 attractions les plus proches de l'utilisateur, avec distance et points potentiels.
+     * Retourne les CINQ attractions les plus proches de l'utilisateur, avec distance et points potentiels.
      * Réponse asynchrone via CompletableFuture.
      */
     @RequestMapping("/getNearbyAttractions") 

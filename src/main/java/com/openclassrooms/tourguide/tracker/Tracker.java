@@ -13,8 +13,8 @@ import com.openclassrooms.tourguide.user.User;
 
 // Le Tracker est un service d'arrière-plan (Thread) qui met à jour en continu la localisation des utilisateurs.
 public class Tracker extends Thread {
-    private Logger logger = LoggerFactory.getLogger(Tracker.class);
-    // Intervalle de temps entre deux cycles de mise à jour des positions (5 minutes).
+    private final Logger logger = LoggerFactory.getLogger(Tracker.class);
+    // Intervalle de temps entre deux cycles de mise à jour des positions (CINQ minutes).
     private static final long TRACKING_POLLING_INTERVAL = TimeUnit.MINUTES.toMillis(5);
     
 
@@ -33,8 +33,7 @@ public class Tracker extends Thread {
     }
 
     /**
-     * Boucle principale du thread Tracker :
-     * - Récupère la liste de tous les utilisateurs.
+     * Boucle principale du thread Tracker  – Récupère la liste de tous les utilisateurs.
      * - Lance le suivi de leur position de façon asynchrone.
      * - Attend que toutes les tâches de suivi soient terminées avant de recommencer un cycle.
      * - Fait une pause entre chaque cycle pour limiter la charge.
@@ -49,12 +48,12 @@ public class Tracker extends Thread {
             }
 
             List<User> users = tourGuideService.getAllUsers();
-            logger.debug("Begin Tracker. Tracking " + users.size() + " users.");
+            logger.debug("Begin Tracker. Tracking {} users.", users.size());
             stopWatch.start();
 
             // Lance le suivi de la position de chaque utilisateur de façon asynchrone.
             CompletableFuture<?>[] futures = users.stream()
-                .map(u -> tourGuideService.trackUserLocation(u))
+                .map(tourGuideService::trackUserLocation)
                 .toArray(CompletableFuture[]::new);
 
             // On attend que toutes les tâches de tracking soient terminées avant de passer au cycle suivant.
@@ -62,7 +61,7 @@ public class Tracker extends Thread {
             CompletableFuture.allOf(futures).join();
 
             stopWatch.stop();
-            logger.debug("Tracker Time Elapsed: " + stopWatch.getDuration().toSeconds() + " seconds.");
+            logger.debug("Tracker Time Elapsed: {} seconds.", stopWatch.getDuration().toSeconds());
             stopWatch.reset();
             try {
                 logger.debug("Tracker sleeping");

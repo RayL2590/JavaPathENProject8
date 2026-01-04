@@ -20,9 +20,8 @@ public class RewardsService {
     private static final double STATUTE_MILES_PER_NAUTICAL_MILE = 1.15077945;
 
     // proximity in miles
-    private int defaultProximityBuffer = 10;
+    private final int defaultProximityBuffer = 10;
     private int proximityBuffer = defaultProximityBuffer;
-    private int attractionProximityRange = 200;
     private final RewardCentral rewardsCentral;
     private final List<Attraction> attractions;
 
@@ -53,7 +52,7 @@ public class RewardsService {
                 for(Attraction attraction : attractions) {
                     // Vérifie si l'utilisateur a déjà reçu une récompense pour cette attraction spécifique
                     // afin d'éviter les doublons et les appels coûteux inutiles vers RewardCentral.
-                    if(user.getUserRewards().stream().filter(r -> r.attraction.attractionName.equals(attraction.attractionName)).count() == 0) {
+                    if(user.getUserRewards().stream().noneMatch(r -> r.attraction.attractionName.equals(attraction.attractionName))) {
                         if(nearAttraction(visitedLocation, attraction)) {
                             user.addUserReward(new UserReward(visitedLocation, attraction, getRewardPoints(attraction, user)));
                         }
@@ -64,11 +63,12 @@ public class RewardsService {
     }
     
     public boolean isWithinAttractionProximity(Attraction attraction, Location location) {
-        return getDistance(attraction, location) > attractionProximityRange ? false : true;
+        int attractionProximityRange = 200;
+        return !(getDistance(attraction, location) > attractionProximityRange);
     }
     
     private boolean nearAttraction(VisitedLocation visitedLocation, Attraction attraction) {
-        return getDistance(attraction, visitedLocation.location) > proximityBuffer ? false : true;
+        return !(getDistance(attraction, visitedLocation.location) > proximityBuffer);
     }
     
     public int getRewardPoints(Attraction attraction, User user) {
@@ -87,10 +87,9 @@ public class RewardsService {
                                + Math.cos(lat1) * Math.cos(lat2) * Math.cos(lon1 - lon2));
 
         // Conversion de la distance angulaire en milles nautiques (1 degré = 60 milles nautiques),
-        // puis conversion finale en milles terrestres (statute miles).
+        // puis conversion finale en miles terrestres (statute miles).
         double nauticalMiles = 60 * Math.toDegrees(angle);
-        double statuteMiles = STATUTE_MILES_PER_NAUTICAL_MILE * nauticalMiles;
-        return statuteMiles;
+        return STATUTE_MILES_PER_NAUTICAL_MILE * nauticalMiles;
     }
 
 }
