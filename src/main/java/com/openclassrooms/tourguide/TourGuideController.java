@@ -8,6 +8,8 @@ import java.util.concurrent.CompletableFuture;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import gpsUtil.location.Attraction;
 import gpsUtil.location.VisitedLocation;
@@ -67,7 +69,12 @@ public class TourGuideController {
     }
     
     private User getUser(String userName) {
-        return tourGuideService.getUser(userName);
+        User user = tourGuideService.getUser(userName);
+        if (user == null) {
+            // On renvoie une 404 propre au lieu de laisser une NPE exploser plus tard
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found: " + userName);
+        }
+        return user;
     }
 
 

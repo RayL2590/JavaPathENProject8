@@ -1,9 +1,11 @@
 package com.openclassrooms.tourguide.service;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
@@ -19,7 +21,7 @@ import com.openclassrooms.tourguide.user.UserReward;
 public class RewardsService {
     private static final double STATUTE_MILES_PER_NAUTICAL_MILE = 1.15077945;
 
-    // proximity in miles
+    // proximité en miles
     private final int defaultProximityBuffer = 10;
     private int proximityBuffer = defaultProximityBuffer;
     private final RewardCentral rewardsCentral;
@@ -27,7 +29,7 @@ public class RewardsService {
 
     // Utilisation d'un pool de threads fixe important pour gérer le calcul asynchrone des récompenses
     // afin de ne pas bloquer le thread principal lors du traitement massif d'utilisateurs.
-    private final ExecutorService executorService = Executors.newFixedThreadPool(1000);
+    private final ExecutorService executorService = Executors.newFixedThreadPool(100);
     
     public RewardsService(GpsUtil gpsUtil, RewardCentral rewardCentral) {
         this.rewardsCentral = rewardCentral;
@@ -39,22 +41,30 @@ public class RewardsService {
         this.proximityBuffer = proximityBuffer;
     }
     
+    /**
+     * Remet le buffer de proximité à sa valeur par défaut.
+     * Méthode prévue pour une future configuration dynamique ou usage public/test.
+     */
     public void setDefaultProximityBuffer() {
         proximityBuffer = defaultProximityBuffer;
     }
-    
-    public void calculateRewards(User user) {
-        // Exécution asynchrone pour libérer le thread appelant immédiatement, essentiel pour la scalabilité.
-        CompletableFuture.runAsync(() -> {
+
+    public CompletableFuture<Void> calculateRewards(User user) {
+        return CompletableFuture.runAsync(() -> {
             List<VisitedLocation> userLocations = user.getVisitedLocations();
-            
+            List<UserReward> userRewards = user.getUserRewards();
+
+            Set<String> rewardedAttractions = userRewards.stream()
+                    .map(r -> r.attraction.attractionName)
+                    .collect(Collectors.toSet());
+
             for(VisitedLocation visitedLocation : userLocations) {
                 for(Attraction attraction : attractions) {
-                    // Vérifie si l'utilisateur a déjà reçu une récompense pour cette attraction spécifique
-                    // afin d'éviter les doublons et les appels coûteux inutiles vers RewardCentral.
-                    if(user.getUserRewards().stream().noneMatch(r -> r.attraction.attractionName.equals(attraction.attractionName))) {
+                    if(!rewardedAttractions.contains(attraction.attractionName)) {
                         if(nearAttraction(visitedLocation, attraction)) {
-                            user.addUserReward(new UserReward(visitedLocation, attraction, getRewardPoints(attraction, user)));
+                            UserReward reward = new UserReward(visitedLocation, attraction, getRewardPoints(attraction, user));
+                            user.addUserReward(reward);
+                            rewardedAttractions.add(attraction.attractionName);
                         }
                     }
                 }
@@ -65,6 +75,10 @@ public class RewardsService {
     public boolean isWithinAttractionProximity(Attraction attraction, Location location) {
         int attractionProximityRange = 200;
         return !(getDistance(attraction, location) > attractionProximityRange);
+    }
+
+    public void stop() {
+        executorService.shutdownNow();
     }
     
     private boolean nearAttraction(VisitedLocation visitedLocation, Attraction attraction) {
@@ -92,4 +106,7 @@ public class RewardsService {
         return STATUTE_MILES_PER_NAUTICAL_MILE * nauticalMiles;
     }
 
+    public List<Attraction> getAttractions() {
+        return attractions;
+    }
 }

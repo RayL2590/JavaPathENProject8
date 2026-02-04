@@ -19,7 +19,7 @@ public class Tracker extends Thread {
     
 
     private final TourGuideService tourGuideService;
-    private boolean stop = false;
+    private volatile boolean stop = false;
 
     public Tracker(TourGuideService tourGuideService) {
         this.tourGuideService = tourGuideService;
@@ -30,6 +30,7 @@ public class Tracker extends Thread {
      */
     public void stopTracking() {
         stop = true;
+        this.interrupt();
     }
 
     /**
@@ -51,10 +52,15 @@ public class Tracker extends Thread {
             logger.debug("Begin Tracker. Tracking {} users.", users.size());
             stopWatch.start();
 
-            // Lance le suivi de la position de chaque utilisateur de façon asynchrone.
             CompletableFuture<?>[] futures = users.stream()
-                .map(tourGuideService::trackUserLocation)
-                .toArray(CompletableFuture[]::new);
+                    .map(u -> tourGuideService.trackUserLocation(u)
+                            .thenCompose(v -> tourGuideService.getRewardsService().calculateRewards(u))
+                            // Ajout de la gestion d'erreur locale pour ne pas impacter les autres users
+                            .exceptionally(ex -> {
+                                logger.error("Error tracking user {}", u.getUserName(), ex);
+                                return null;
+                            }))
+                    .toArray(CompletableFuture[]::new);
 
             // On attend que toutes les tâches de tracking soient terminées avant de passer au cycle suivant.
             // Cela garantit que le système ne surcharge pas si le tracking prend plus de temps que prévu.

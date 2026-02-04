@@ -18,6 +18,7 @@ import com.openclassrooms.tourguide.helper.InternalTestHelper;
 import com.openclassrooms.tourguide.service.RewardsService;
 import com.openclassrooms.tourguide.service.TourGuideService;
 import com.openclassrooms.tourguide.user.User;
+import org.awaitility.Awaitility;
 
 public class TestPerformance {
 
@@ -58,14 +59,17 @@ public class TestPerformance {
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();
 
+		// On lance les tracks en parallèle et on attend la complétion globale :
+		// sinon on mesure surtout le coût de soumission des tâches, pas leur exécution.
 		CompletableFuture<?>[] futures = allUsers.stream()
-            .map(u -> CompletableFuture.runAsync(() -> tourGuideService.trackUserLocation(u)))
-            .toArray(CompletableFuture[]::new);
-        
-        CompletableFuture.allOf(futures).join();
+				.map(tourGuideService::trackUserLocation)
+				.toArray(CompletableFuture[]::new);
+
+		CompletableFuture.allOf(futures).join();
 
 		System.out.println("Nombre d'utilisateurs testés : " + allUsers.size());
 		stopWatch.stop();
+		// Nettoyage: évite de laisser un thread de tracking tourner après le test (interférences + ressources).
 		tourGuideService.tracker.stopTracking();
 
 		System.out.println("highVolumeTrackLocation: Time Elapsed: "
@@ -85,24 +89,24 @@ public class TestPerformance {
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
 		Attraction attraction = gpsUtil.getAttractions().get(0);
+
+		// Précondition: on injecte une visite “près” d’une attraction pour rendre le calcul des rewards déterministe.
 		List<User> allUsers;
 		allUsers = tourGuideService.getAllUsers();
 		allUsers.forEach(u -> u.addToVisitedLocations(new VisitedLocation(u.getUserId(), attraction, new Date())));
 
+		// Le calcul peut s’appuyer sur des traitements asynchrones; on attend ensuite la convergence.
 		allUsers.forEach(rewardsService::calculateRewards);
 
-		for (User user : allUsers) {
-            while (user.getUserRewards().isEmpty()) {
-                try {
-                    TimeUnit.MILLISECONDS.sleep(1000);
-                } catch (InterruptedException e) {
-                    e.getCause();
-                }
-            }
-        }
+		// Attente bornée + polling modéré pour éviter un busy-wait CPU sur un très grand volume d’utilisateurs.
+		Awaitility.await()
+        .atMost(20, TimeUnit.MINUTES)
+        .pollInterval(500, TimeUnit.MILLISECONDS)
+        .until(() -> allUsers.stream().noneMatch(u -> u.getUserRewards().isEmpty()));
 
 		System.out.println("Nombre d'utilisateurs testés : " + allUsers.size());
 		stopWatch.stop();
+		// Nettoyage: évite des effets de bord entre tests et libère les ressources.
 		tourGuideService.tracker.stopTracking();
 
 		System.out.println("highVolumeGetRewards: Time Elapsed: " + stopWatch.getDuration().toSeconds()

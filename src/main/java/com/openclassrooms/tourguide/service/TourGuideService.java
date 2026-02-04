@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -39,14 +39,13 @@ public class TourGuideService {
     private final RewardsService rewardsService;
     private final TripPricer tripPricer = new TripPricer();
     public final Tracker tracker;
-    boolean testMode = true;
+    private final boolean testMode = true; // Peut être rendu configurable via @Value si besoin
 
-    private final ExecutorService executorService = Executors.newFixedThreadPool(1000);
+    private final ExecutorService executorService = Executors.newFixedThreadPool(100);
 
     public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
         this.gpsUtil = gpsUtil;
         this.rewardsService = rewardsService;
-        
         // Fixe la locale par défaut à US pour assurer une cohérence dans les formats de nombres et de devises,
         // ce qui est important pour la compatibilité avec les bibliothèques externes comme TripPricer.
         Locale.setDefault(Locale.US);
@@ -60,6 +59,7 @@ public class TourGuideService {
         }
         // Le Tracker est un thread d'arrière-plan qui met à jour périodiquement la position des utilisateurs.
         tracker = new Tracker(this);
+        tracker.start();
         addShutDownHook();
     }
 
@@ -111,52 +111,53 @@ public class TourGuideService {
     }
 
     public CompletableFuture<VisitedLocation> trackUserLocation(User user) {
-        // On enveloppe l'appel bloquant dans supplyAsync
-        return CompletableFuture.supplyAsync(() -> gpsUtil.getUserLocation(user.getUserId()), executorService) // On utilise un petit pool partagé
-        .thenApply(visitedLocation -> {
-            user.addToVisitedLocations(visitedLocation);
-            return visitedLocation;
-        })
-        .thenApply(visitedLocation -> {
-            // On enchaîne le calcul des récompenses sans bloquer
-            rewardsService.calculateRewards(user);
-            return visitedLocation;
-        });
+        return CompletableFuture.supplyAsync(() -> gpsUtil.getUserLocation(user.getUserId()), executorService)
+                .thenApply(visitedLocation -> {
+                    user.addToVisitedLocations(visitedLocation);
+                    return visitedLocation;
+                });
+    }
+
+    public void stop() {
+        tracker.stopTracking();
+        executorService.shutdownNow();
+        rewardsService.stop();
     }
 
     public List<NearByAttractionDto> getNearByAttractions(VisitedLocation visitedLocation, User user) {
         List<NearByAttractionDto> nearbyAttractions = new ArrayList<>();
-        
-        // On récupère toutes les attractions et on les trie par distance croissante par rapport à l'utilisateur.
-        gpsUtil.getAttractions().stream()
+        // Utilise la liste déjà chargée par RewardsService si possible
+        List<gpsUtil.location.Attraction> attractions;
+        try {
+            attractions = rewardsService.getAttractions();
+        } catch (Exception e) {
+            attractions = gpsUtil.getAttractions();
+        }
+        attractions.stream()
             .sorted((a1, a2) -> {
                 double dist1 = rewardsService.getDistance(a1, visitedLocation.location);
                 double dist2 = rewardsService.getDistance(a2, visitedLocation.location);
                 return Double.compare(dist1, dist2);
             })
-            .limit(5) // On ne garde que les CINQ plus proches pour l'affichage.
+            .limit(5)
             .forEach(attraction -> {
                 double distance = rewardsService.getDistance(attraction, visitedLocation.location);
-                // Récupération des points potentiels pour cette attraction spécifique.
                 int rewardPoints = rewardsService.getRewardPoints(attraction, user);
-                
                 nearbyAttractions.add(new NearByAttractionDto(
                 attraction.attractionName,
-                attraction.latitude,                
-                attraction.longitude,               
-                visitedLocation.location.latitude,  
-                visitedLocation.location.longitude, 
+                attraction.latitude,
+                attraction.longitude,
+                visitedLocation.location.latitude,
+                visitedLocation.location.longitude,
                 distance,
                 rewardPoints
                 ));
             });
-
         return nearbyAttractions;
     }
 
     private void addShutDownHook() {
-        // Assure que le thread du Tracker est arrêté proprement lors de l'arrêt de l'application JVM.
-        Runtime.getRuntime().addShutdownHook(new Thread(tracker::stopTracking));
+        Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
     }
 
     /**********************************************************************************
@@ -165,7 +166,7 @@ public class TourGuideService {
     private static final String tripPricerApiKey = "test-server-api-key";
     // Database connection will be used for external users, but for testing purposes
     // internal users are provided and stored in memory
-    private final Map<String, User> internalUserMap = new HashMap<>();
+    private final Map<String, User> internalUserMap = new ConcurrentHashMap<>();
 
     private void initializeInternalUsers() {
         IntStream.range(0, InternalTestHelper.getInternalUserNumber()).forEach(i -> {

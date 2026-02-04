@@ -23,25 +23,34 @@ import com.openclassrooms.tourguide.user.UserReward;
 
 public class TestRewardsService {
 
-	@Test
+    @Test
     public void userGetRewards() {
         GpsUtil gpsUtil = new GpsUtil();
         RewardsService rewardsService = new RewardsService(gpsUtil, new RewardCentral());
 
+        // Fixture: on désactive la génération d'utilisateurs internes pour isoler le test (sinon bruit + temps).
         InternalTestHelper.setInternalUserNumber(0);
+
         TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
         User user = new User(UUID.randomUUID(), "jon", "000", "jon@tourGuide.com");
         Attraction attraction = gpsUtil.getAttractions().get(0);
         user.addToVisitedLocations(new VisitedLocation(user.getUserId(), attraction, new Date()));
-        
-        tourGuideService.trackUserLocation(user);
 
+        // Le tracking déclenche des traitements asynchrones: on attend explicitement la fin pour éviter un test flaky.
+        tourGuideService.trackUserLocation(user).join();
+
+        // Dans ce scénario, on force le calcul des récompenses pour maîtriser le timing du test.
+        rewardsService.calculateRewards(user);
+
+        // Attente bornée: le service peut créditer la récompense via des tâches asynchrones.
         Awaitility.await()
                 .atMost(10, TimeUnit.SECONDS)
                 .until(() -> !user.getUserRewards().isEmpty());
 
         List<UserReward> userRewards = user.getUserRewards();
+
+        // Nettoyage: éviter un thread de tracking vivant après le test (interférences entre tests).
         tourGuideService.tracker.stopTracking();
 
         assertEquals(1, userRewards.size());
@@ -59,13 +68,16 @@ public class TestRewardsService {
 	public void nearAllAttractions() {
 		GpsUtil gpsUtil = new GpsUtil();
 		RewardsService rewardsService = new RewardsService(gpsUtil, new RewardCentral());
+
+		// On élargit volontairement le buffer pour que toute visite soit "proche" de toutes les attractions (test exhaustif).
 		rewardsService.setProximityBuffer(Integer.MAX_VALUE);
 
 		InternalTestHelper.setInternalUserNumber(1);
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
 		rewardsService.calculateRewards(tourGuideService.getAllUsers().get(0));
-		
+
+        // Boucle d'attente bornée: le calcul des récompenses peut compléter après l'appel (asynchronisme / latence).
         List<UserReward> userRewards = tourGuideService.getUserRewards(tourGuideService.getAllUsers().get(0));
         int i = 0;
 
@@ -79,6 +91,7 @@ public class TestRewardsService {
             i++;
         }
 
+        // Nettoyage: éviter des effets de bord entre tests.
 		tourGuideService.tracker.stopTracking();
 
 		assertEquals(gpsUtil.getAttractions().size(), userRewards.size());

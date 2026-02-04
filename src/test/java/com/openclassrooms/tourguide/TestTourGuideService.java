@@ -25,13 +25,20 @@ public class TestTourGuideService {
 	public void getUserLocation() {
 		GpsUtil gpsUtil = new GpsUtil();
 		RewardsService rewardsService = new RewardsService(gpsUtil, new RewardCentral());
+
+		// Fixture: on coupe les utilisateurs "internes" pour isoler le test (sinon bruit + coûts inutiles).
 		InternalTestHelper.setInternalUserNumber(0);
+
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
 		User user = new User(UUID.randomUUID(), "jon", "000", "jon@tourGuide.com");
-		// .join() est utilisé ici car trackUserLocation retourne un CompletableFuture
+
+		// trackUserLocation est asynchrone: on attend la fin pour éviter un test flaky (timing dépendant).
 		VisitedLocation visitedLocation = tourGuideService.trackUserLocation(user).join();
+
+		// Nettoyage: évite de laisser le tracker (thread de fond) actif après le test.
 		tourGuideService.tracker.stopTracking();
+
         assertEquals(visitedLocation.userId, user.getUserId());
 	}
 
@@ -86,7 +93,7 @@ public class TestTourGuideService {
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
 		User user = new User(UUID.randomUUID(), "jon", "000", "jon@tourGuide.com");
-		// Attention : trackUserLocation est asynchrone, il faut join() pour attendre la complétion
+		// On attend explicitement la complétion: l'objectif du test est la valeur produite, pas la soumission de la tâche.
 		VisitedLocation visitedLocation = tourGuideService.trackUserLocation(user).join();
 
 		tourGuideService.tracker.stopTracking();
