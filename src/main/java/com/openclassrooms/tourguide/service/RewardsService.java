@@ -1,0 +1,112 @@
+package com.openclassrooms.tourguide.service;
+
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
+
+import org.springframework.stereotype.Service;
+
+import gpsUtil.GpsUtil;
+import gpsUtil.location.Attraction;
+import gpsUtil.location.Location;
+import gpsUtil.location.VisitedLocation;
+import rewardCentral.RewardCentral;
+import com.openclassrooms.tourguide.user.User;
+import com.openclassrooms.tourguide.user.UserReward;
+
+@Service
+public class RewardsService {
+    private static final double STATUTE_MILES_PER_NAUTICAL_MILE = 1.15077945;
+
+    // proximité en miles
+    private final int defaultProximityBuffer = 10;
+    private int proximityBuffer = defaultProximityBuffer;
+    private final RewardCentral rewardsCentral;
+    private final List<Attraction> attractions;
+
+    // Utilisation d'un pool de threads fixe important pour gérer le calcul asynchrone des récompenses
+    // afin de ne pas bloquer le thread principal lors du traitement massif d'utilisateurs.
+    private final ExecutorService executorService = Executors.newFixedThreadPool(100);
+    
+    public RewardsService(GpsUtil gpsUtil, RewardCentral rewardCentral) {
+        this.rewardsCentral = rewardCentral;
+        // Chargement des attractions en mémoire au démarrage pour éviter de les récupérer via GpsUtil à chaque calcul (optimisation de performance).
+        this.attractions = gpsUtil.getAttractions();
+    }
+    
+    public void setProximityBuffer(int proximityBuffer) {
+        this.proximityBuffer = proximityBuffer;
+    }
+    
+    /**
+     * Remet le buffer de proximité à sa valeur par défaut.
+     * Méthode prévue pour une future configuration dynamique ou usage public/test.
+     */
+    public void setDefaultProximityBuffer() {
+        proximityBuffer = defaultProximityBuffer;
+    }
+
+    public CompletableFuture<Void> calculateRewards(User user) {
+        return CompletableFuture.runAsync(() -> {
+            List<VisitedLocation> userLocations = user.getVisitedLocations();
+            List<UserReward> userRewards = user.getUserRewards();
+
+            Set<String> rewardedAttractions = userRewards.stream()
+                    .map(r -> r.attraction.attractionName)
+                    .collect(Collectors.toSet());
+
+            for(VisitedLocation visitedLocation : userLocations) {
+                for(Attraction attraction : attractions) {
+                    if(!rewardedAttractions.contains(attraction.attractionName)) {
+                        if(nearAttraction(visitedLocation, attraction)) {
+                            UserReward reward = new UserReward(visitedLocation, attraction, getRewardPoints(attraction, user));
+                            user.addUserReward(reward);
+                            rewardedAttractions.add(attraction.attractionName);
+                        }
+                    }
+                }
+            }
+        }, executorService);
+    }
+    
+    public boolean isWithinAttractionProximity(Attraction attraction, Location location) {
+        int attractionProximityRange = 200;
+        return !(getDistance(attraction, location) > attractionProximityRange);
+    }
+
+    public void stop() {
+        executorService.shutdownNow();
+    }
+    
+    private boolean nearAttraction(VisitedLocation visitedLocation, Attraction attraction) {
+        return !(getDistance(attraction, visitedLocation.location) > proximityBuffer);
+    }
+    
+    public int getRewardPoints(Attraction attraction, User user) {
+        return rewardsCentral.getAttractionRewardPoints(attraction.attractionId, user.getUserId());
+    }
+    
+    public double getDistance(Location loc1, Location loc2) {
+        double lat1 = Math.toRadians(loc1.latitude);
+        double lon1 = Math.toRadians(loc1.longitude);
+        double lat2 = Math.toRadians(loc2.latitude);
+        double lon2 = Math.toRadians(loc2.longitude);
+
+        // Calcul de la distance angulaire en utilisant la loi des cosinus.
+        // Cette méthode est utilisée pour calculer la distance "à vol d'oiseau" entre deux points sur une sphère.
+        double angle = Math.acos(Math.sin(lat1) * Math.sin(lat2)
+                               + Math.cos(lat1) * Math.cos(lat2) * Math.cos(lon1 - lon2));
+
+        // Conversion de la distance angulaire en milles nautiques (1 degré = 60 milles nautiques),
+        // puis conversion finale en miles terrestres (statute miles).
+        double nauticalMiles = 60 * Math.toDegrees(angle);
+        return STATUTE_MILES_PER_NAUTICAL_MILE * nauticalMiles;
+    }
+
+    public List<Attraction> getAttractions() {
+        return attractions;
+    }
+}

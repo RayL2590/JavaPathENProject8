@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>TourGuide Admin Demo</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
+        #sidebar { width: 300px; padding: 20px; background: #f4f4f4; border-right: 1px solid #ccc; overflow-y: auto; }
+        #content { flex: 1; display: flex; flex-direction: column; }
+        #map { flex: 1; }
+        #rewards-panel { height: 200px; padding: 20px; background: #fff; border-top: 1px solid #ccc; overflow-y: auto; }
+        .btn { display: block; width: 100%; padding: 10px; margin-bottom: 10px; cursor: pointer; }
+        .green-btn { background-color: #4CAF50; color: white; border: none; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h3>Utilisateurs</h3>
+    <select id="userSelect" style="width: 100%; padding: 5px; margin-bottom: 20px;"></select>
+    
+    <button class="btn" onclick="loadRecommendations()">1. Voir Recommandations (Carte)</button>
+    <button class="btn green-btn" onclick="forceVisit()">2. Simuler Visite (Gagner Reward)</button>
+    <button class="btn" onclick="loadRewards()">3. Voir Rewards</button>
+</div>
+
+<div id="content">
+    <div id="map"></div>
+    <div id="rewards-panel">
+        <h3>Récompenses de l'utilisateur</h3>
+        <table id="rewardsTable">
+            <thead><tr><th>Attraction</th><th>Points</th></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // Initialisation Carte
+    var map = L.map('map').setView([39.82, -98.58], 4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    var markers = [];
+
+    // Charger la liste des utilisateurs au démarrage
+    fetch('/getAllUsersBasic').then(r => r.json()).then(users => {
+        const select = document.getElementById('userSelect');
+        users.forEach(u => {
+            let opt = document.createElement('option');
+            opt.value = u;
+            opt.innerText = u;
+            select.appendChild(opt);
+        });
+    });
+
+    // SCENARIO 1 : Carte des 5 recommandations
+    function loadRecommendations() {
+        const userName = document.getElementById('userSelect').value;
+        
+        // Nettoyer la carte
+        markers.forEach(m => map.removeLayer(m));
+        markers = [];
+
+        fetch('/getNearbyAttractions?userName=' + userName)
+            .then(r => r.json())
+            .then(dtos => {
+                console.log("Données reçues :", dtos);
+
+                if(dtos.length === 0) return alert("Aucune recommandation trouvée.");
+
+                // 1. Placer l'utilisateur (Bleu)
+                const userLoc = dtos[0].userLocation || {latitude: dtos[0].userLatitude, longitude: dtos[0].userLongitude};
+
+                console.log("Coordonnées reçues du User :", userLoc);
+                
+                const userMarker = L.marker([userLoc.latitude, userLoc.longitude])
+                    .bindPopup("<b>" + userName + "</b> (User)")
+                    .addTo(map);
+                markers.push(userMarker);
+
+                // 2. Placer les 5 attractions (Rouge)
+                dtos.forEach(dto => {
+                    const lat = dto.attractionLocation ? dto.attractionLocation.latitude : dto.attractionLatitude;
+                    const lon = dto.attractionLocation ? dto.attractionLocation.longitude : dto.attractionLongitude;
+                    
+                    var icon = L.icon({
+                        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+                        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+                    });
+
+                    const m = L.marker([lat, lon], {icon: icon})
+                        .bindPopup("<b>" + dto.attractionName + "</b><br>Dist: " + Math.round(dto.distanceInMiles) + " miles")
+                        .addTo(map);
+                    markers.push(m);
+                });
+
+                // On crée un groupe avec tous les marqueurs (User + Attractions)
+                var group = new L.featureGroup(markers);
+                // On demande à la carte de s'adapter pour tout montrer + une petite marge (pad)
+                map.fitBounds(group.getBounds().pad(0.1));
+            })
+            .catch(e => console.error("Erreur JS:", e));
+    }
+
+    // ACTION : Forcer une visite
+    function forceVisit() {
+        const userName = document.getElementById('userSelect').value;
+        fetch('/triggerVisit?userName=' + userName, {method: 'POST'})
+            .then(() => {
+                alert("Visite simulée ! Attendez 1 ou 2 secondes (asynchrone) puis cliquez sur 'Voir Rewards'.");
+            });
+    }
+
+    // SCENARIO 2 : Voir les Rewards
+    function loadRewards() {
+        const userName = document.getElementById('userSelect').value;
+        fetch('/getRewards?userName=' + userName)
+            .then(r => r.json())
+            .then(rewards => {
+                const tbody = document.querySelector('#rewardsTable tbody');
+                tbody.innerHTML = "";
+                rewards.forEach(r => {
+                    const row = `<tr><td>${r.attraction.attractionName}</td><td>${r.rewardPoints}</td></tr>`;
+                    tbody.innerHTML += row;
+                });
+                if(rewards.length === 0) alert("Pas de rewards pour l'instant.");
+            });
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+/*
+
+!libs/
+!src/
+!pom.xml
+!readme.md
+!.gitignore
+!.github/
+!Livrables/
+
+src/target/
