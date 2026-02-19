@@ -24,8 +24,7 @@ import tripPricer.Provider;
 @RestController
 public class TourGuideController {
 
-    final
-    TourGuideService tourGuideService;
+    private final TourGuideService tourGuideService;
 
     public TourGuideController(TourGuideService tourGuideService) {
         this.tourGuideService = tourGuideService;
@@ -38,7 +37,6 @@ public class TourGuideController {
     
     /**
      * Retourne la dernière position connue ou déclenche le suivi asynchrone de la position de l'utilisateur.
-     * Réponse asynchrone via CompletableFuture.
      */
     @RequestMapping("/getLocation") 
     public CompletableFuture<VisitedLocation> getLocation(@RequestParam String userName) {
@@ -47,7 +45,6 @@ public class TourGuideController {
     
     /**
      * Retourne les CINQ attractions les plus proches de l'utilisateur, avec distance et points potentiels.
-     * Réponse asynchrone via CompletableFuture.
      */
     @RequestMapping("/getNearbyAttractions") 
     public CompletableFuture<List<NearByAttractionDto>> getNearbyAttractions(@RequestParam String userName) {

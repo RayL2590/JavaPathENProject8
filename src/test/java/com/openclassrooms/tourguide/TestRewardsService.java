@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import gpsUtil.GpsUtil;
 import gpsUtil.location.Attraction;
@@ -65,36 +66,26 @@ public class TestRewardsService {
 	}
 
 	@Test
-	public void nearAllAttractions() {
-		GpsUtil gpsUtil = new GpsUtil();
-		RewardsService rewardsService = new RewardsService(gpsUtil, new RewardCentral());
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    public void nearAllAttractions() throws Exception {
+        GpsUtil gpsUtil = new GpsUtil();
+        RewardsService rewardsService = new RewardsService(gpsUtil, new RewardCentral());
 
-		// On élargit volontairement le buffer pour que toute visite soit "proche" de toutes les attractions (test exhaustif).
-		rewardsService.setProximityBuffer(Integer.MAX_VALUE);
+        rewardsService.setProximityBuffer(Integer.MAX_VALUE); // toutes les attractions sont considérées proches
 
-		InternalTestHelper.setInternalUserNumber(1);
-		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
+        InternalTestHelper.setInternalUserNumber(1);
+        TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
-		rewardsService.calculateRewards(tourGuideService.getAllUsers().get(0));
+        try {
+            User user = tourGuideService.getAllUsers().get(0);
 
-        // Boucle d'attente bornée: le calcul des récompenses peut compléter après l'appel (asynchronisme / latence).
-        List<UserReward> userRewards = tourGuideService.getUserRewards(tourGuideService.getAllUsers().get(0));
-        int i = 0;
+            rewardsService.calculateRewards(user).get(30, TimeUnit.SECONDS); // rend l'assertion déterministe
 
-        while(userRewards.size() < gpsUtil.getAttractions().size() && i < 200) {
-            try {
-                TimeUnit.MILLISECONDS.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            userRewards = tourGuideService.getUserRewards(tourGuideService.getAllUsers().get(0));
-            i++;
+            List<UserReward> userRewards = tourGuideService.getUserRewards(user);
+            assertEquals(gpsUtil.getAttractions().size(), userRewards.size());
+        } finally {
+            tourGuideService.stop(); // libère tracker + pools même en cas d'échec
         }
-
-        // Nettoyage: éviter des effets de bord entre tests.
-		tourGuideService.tracker.stopTracking();
-
-		assertEquals(gpsUtil.getAttractions().size(), userRewards.size());
-	}
+    }
 
 }

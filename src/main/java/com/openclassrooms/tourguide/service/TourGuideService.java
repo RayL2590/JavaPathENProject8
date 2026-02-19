@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import gpsUtil.GpsUtil;
+import gpsUtil.location.Attraction;
 import gpsUtil.location.Location;
 import gpsUtil.location.VisitedLocation;
 
@@ -125,35 +126,33 @@ public class TourGuideService {
     }
 
     public List<NearByAttractionDto> getNearByAttractions(VisitedLocation visitedLocation, User user) {
-        List<NearByAttractionDto> nearbyAttractions = new ArrayList<>();
-        // Utilise la liste déjà chargée par RewardsService si possible
-        List<gpsUtil.location.Attraction> attractions;
-        try {
-            attractions = rewardsService.getAttractions();
-        } catch (Exception e) {
+        List<Attraction> attractions = rewardsService.getAttractions();
+        if (attractions == null) {
             attractions = gpsUtil.getAttractions();
         }
-        attractions.stream()
-            .sorted((a1, a2) -> {
-                double dist1 = rewardsService.getDistance(a1, visitedLocation.location);
-                double dist2 = rewardsService.getDistance(a2, visitedLocation.location);
-                return Double.compare(dist1, dist2);
-            })
+
+        return attractions.stream()
+            .sorted((a1, a2) -> Double.compare(
+                rewardsService.getDistance(a1, visitedLocation.location),
+                rewardsService.getDistance(a2, visitedLocation.location)))
             .limit(5)
-            .forEach(attraction -> {
-                double distance = rewardsService.getDistance(attraction, visitedLocation.location);
-                int rewardPoints = rewardsService.getRewardPoints(attraction, user);
-                nearbyAttractions.add(new NearByAttractionDto(
-                attraction.attractionName,
-                attraction.latitude,
-                attraction.longitude,
-                visitedLocation.location.latitude,
-                visitedLocation.location.longitude,
-                distance,
-                rewardPoints
-                ));
-            });
-        return nearbyAttractions;
+            .map(attraction -> toNearByAttractionDto(attraction, visitedLocation, user))
+            .toList();
+    }
+
+    private NearByAttractionDto toNearByAttractionDto(Attraction attraction, VisitedLocation visitedLocation, User user) {
+        double distance = rewardsService.getDistance(attraction, visitedLocation.location);
+        int rewardPoints = rewardsService.getRewardPoints(attraction, user);
+
+        return new NearByAttractionDto(
+            attraction.attractionName,
+            attraction.latitude,
+            attraction.longitude,
+            visitedLocation.location.latitude,
+            visitedLocation.location.longitude,
+            distance,
+            rewardPoints
+        );
     }
 
     private void addShutDownHook() {

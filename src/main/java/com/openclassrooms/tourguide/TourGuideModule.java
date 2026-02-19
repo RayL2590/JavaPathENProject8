@@ -6,7 +6,6 @@ import org.springframework.context.annotation.Configuration;
 import gpsUtil.GpsUtil;
 import rewardCentral.RewardCentral;
 import com.openclassrooms.tourguide.service.RewardsService;
-import com.openclassrooms.tourguide.service.TourGuideService;
 
 @Configuration
 public class TourGuideModule {
@@ -26,8 +25,4 @@ public class TourGuideModule {
 		return new RewardCentral();
 	}
 	
-	@Bean
-	public TourGuideService getTourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
-		return new TourGuideService(gpsUtil, rewardsService);
-	}
 }
